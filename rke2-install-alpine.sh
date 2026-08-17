@@ -1,5 +1,11 @@
 #!/bin/sh
 
+which rke2
+if [ "$?" = 0 ]; then
+	echo "It appears that RKE2 is already installed."
+	exit 1
+fi
+
 set -e
 
 if [ "$RKE2_VERSION" = "" ]; then
@@ -27,10 +33,8 @@ fi
 
 if [ ! -f /sys/fs/cgroup/cgroup.stat ]; then
 	echo "cgroups v2 are not enabled on this system."
-	echo "We will enable them by writing to: /etc/conf.d/cgroups.conf"
-	echo 'rc_cgroup_mode="unified"' > /etc/conf.d/cgroups.conf
-	echo "We will now enable the cgroups service."
-	rc-update add cgroups boot
+	echo "We will now enable and start the cgroups service."
+	rc-update add cgroups sysinit
 	rc-service cgroups start
 	mount
 
@@ -63,21 +67,20 @@ echo "Adding to PATH in ~/.profile..."
 EXPORT_LINE="export PATH=\"$INSTALL_PREFIX/bin:$PATH\""
 echo "$EXPORT_LINE" >> ~/.profile
 
-echo "Creating service rke2-server..."
-cat > /etc/init.d/rke2-server <<'EOF'
-#!/sbin/openrc-run
+mksvc() {
+	local SVC_MODE="$1"
+	local SVC_PATH="/etc/init.d/rke2-$SVC_MODE"
 
-name="rke2-server"
-description="RKE2 Kubernetes Server"
+	echo "Creating service rke2-$SVC_MODE..."
 
-command="
-EOF
+	printf "#!/sbin/openrc-run\n\n: \"\${INSTALL_PREFIX:=$INSTALL_PREFIX}\"\n: \"\${SVC_MODE:=$SVC_MODE}\"\n\n" > "$SVC_PATH"
 
-printf "$INSTALL_PREFIX" >> /etc/init.d/rke2-server
+	cat >> "$SVC_PATH" <<'EOF'
 
-cat >> /etc/init.d/rke2-server << 'EOF'
-/bin/rke2"
-command_args="server"
+name="rke2-$SVC_MODE"
+description="RKE2 Kubernetes $SVC_MODE"
+command="${INSTALL_PREFIX}/bin/rke2"
+command_args="$SVC_MODE"
 command_background="yes"
 pidfile="/run/${RC_SVCNAME}.pid"
 output_log="/var/log/${RC_SVCNAME}.log"
@@ -86,12 +89,58 @@ error_log="/var/log/${RC_SVCNAME}.log"
 depend() {
     need net
 }
+
+start_pre() {
+	modprobe br_netfilter
+	modprobe overlay
+}
+
+# OpenRC's rc_cgroup_cleanup setting doesn't work properly.
+# I don't know why. OpenRC sucks.
+# We have to do it ourselves.
+stop_pre() {
+	local cg="/sys/fs/cgroup/openrc.${RC_SVCNAME}"
+	local i
+
+	pkill kube
+	pkill flannel
+	pkill pause
+	pkill etcd
+	pkill traefik
+	pkill coredns
+	pkill calico
+	pkill runsv
+
+	ebegin "Stopping ${RC_SVCNAME}"
+
+	printf '1' > "${cg}/cgroup.kill"
+
+	for i in 1 2 3 4 5; do
+		[ ! -s "${cg}/cgroup.procs" ] && break
+		sleep 1
+	done
+
+	find "${cg}" -depth -type d 2>/dev/null | while read -r d; do
+		rmdir "$d" 2>/dev/null || true
+	done
+
+	rmdir "$cg"
+
+	mount | awk '$3 ~ /^\/var\/lib\/kubelet\/pods\// {print $3}' | sort -r | while read -r m; do
+		umount -f "$m"
+	done
+	umount -l /var/lib/kubelet 2>/dev/null || true
+	umount -f -R /var/lib/kubelet 2>/dev/null || true
+
+	eend 0
+}
 EOF
 
-chmod +x /etc/init.d/rke2-server
-rc-update add rke2-server default
-rc-service rke2-server start
+	chmod +x "$SVC_PATH"
+}
 
-echo "RKE2 is installed and the service rke2-server is enabled and started."
+mksvc server
+mksvc agent
+
+echo "RKE2 is installed."
 echo "To add rke2 to your PATH for this session: $EXPORT_LINE"
-echo "To monitor progress: tail -f /var/log/rke2-server.log"
