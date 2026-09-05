@@ -19,8 +19,6 @@ This script does not delete the uninstall script provided by RKE2, but you shoul
 
 To uninstall, run [rke2-uninstall-alpine.sh] instead. It's recommended to stop the server/agent first because sometimes things are still unmounting.
 
-The uninstaller does *not* remove `/var/lib/rancher/rke2`.
-
 ## Alpine Problems
 
 RKE2 dropped OpenRC support a few years ago, and Alpine is a lot slimmer than the distros it officially supports, so there are some issues you will encounter.
