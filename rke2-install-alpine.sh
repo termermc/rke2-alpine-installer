@@ -2,8 +2,8 @@
 
 which rke2
 if [ "$?" = 0 ]; then
-	echo "It appears that RKE2 is already installed."
-	exit 1
+	echo "It appears that RKE2 is already installed. Press enter to continue, or press CTRL+C to cancel."
+	read
 fi
 
 set -e
