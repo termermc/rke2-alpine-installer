@@ -25,13 +25,13 @@ The uninstaller does *not* remove `/var/lib/rancher/rke2`.
 
 RKE2 dropped OpenRC support a few years ago, and Alpine is a lot slimmer than the distros it officially supports, so there are some issues you will encounter.
 
-## CNI Problems
+### CNI Problems
 
 Calico CNI does not work out of the box because BPF isn't enabled by default on Alpine.
 
 I personally prefer Flannel because it works nicely with IPv6 and doesn't require any special kernel modules.
 
-## CGroup Problems
+### CGroup Problems
 
 The official RKE2 installer uses SystemD's CGroup integration to manage all processes spawned for the server/agent.
 
